@@ -56,7 +56,10 @@ def setup_logging(
     file_handler.setLevel(numeric_level)
     root_logger.addHandler(file_handler)
 
+    # Suppress noisy loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("sentry_sdk").setLevel(logging.ERROR)
 
     # Log the configuration only if we're above ERROR level
     root_logger.info(f"Logging configured with level: {log_level}")
-    root_logger.info(f"Log file location: {log_file}") 
+    root_logger.info(f"Log file location: {log_file}")

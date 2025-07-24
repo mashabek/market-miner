@@ -4,13 +4,12 @@ This spider extracts product information including price, availability, and spec
 """
 
 import re
-import json
 import logging
-from typing import Dict, List, Optional
 from datetime import datetime
 
 import scrapy
-from scrapy.http import Request, Response
+from scrapy.http.request import Request
+from scrapy.http.response import Response
 from scrapy.exceptions import DropItem
 from scrapper.items import ProductItem
 

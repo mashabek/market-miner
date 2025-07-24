@@ -5,6 +5,7 @@ from scrapper.db.models.category import CategoryData
 from scrapper.db.models.product import ProductData
 from scrapper.db.models.scraped_data import ScrapedData
 from scrapper.db.models.availability_keyword import AvailabilityKeyword
+from scrapper.db.models.product_retailer import ProductRetailerData
 
 __all__ = [
     'BaseModel',
@@ -14,5 +15,6 @@ __all__ = [
     'CategoryData',
     'ProductData',
     'ScrapedData',
-    'AvailabilityKeyword'
+    'AvailabilityKeyword',
+    'ProductRetailerData'
 ] 

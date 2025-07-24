@@ -1,5 +1,5 @@
 from typing import Optional
-from supabase import Client
+from supabase import AsyncClient
 from scrapper.db.repositories.base import BaseRepository
 from scrapper.db.models import RetailerData
 from scrapper.db.models import RetailerType
@@ -7,7 +7,7 @@ from scrapper.db.models import RetailerType
 class RetailerRepository(BaseRepository[RetailerData]):
     """Repository for retailer operations"""
 
-    def __init__(self, supabase: Client):
+    def __init__(self, supabase: AsyncClient):
         super().__init__(supabase, "retailers", RetailerData)
 
     async def get_by_name(self, name: str) -> Optional[RetailerData]:

@@ -10,6 +10,7 @@ from scrapper.db.models.enums import Currency
 class ScrapedData(BaseModel):
     """Data model for scraped product data"""
     url: str
+    image_urls: Optional[list] = None  # List of product image URLs (for variants, etc.)
     retailer_id: int
     name: str
     success: bool = False
@@ -31,6 +32,7 @@ class ScrapedData(BaseModel):
         """Create ScrapedData from scraped ProductItem"""
         return cls(
             url=item['url'],
+            image_urls=item.get('image_urls') or item.get('images') or None,
             retailer_id=retailer_id,
             name=item['product_name'],
             success=item.get('success', False),

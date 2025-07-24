@@ -14,7 +14,6 @@ from scrapy.exceptions import DropItem
 from scrapy import Spider
 from scrapper.items import ProductItem, VariantItem
 from scrapper.db.config import get_supabase_client
-from scrapper.db.services.scraping_service import ScrapingService
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,6 @@ class ProductValidationPipeline:
 
     def process_item(self, item: ProductItem, spider) -> ProductItem:
         adapter = ItemAdapter(item)
-        
         # Validate required fields
         required_fields = ['url', 'website', 'product_name']
         for field in required_fields:
@@ -44,29 +42,23 @@ class ProductValidationPipeline:
             # Process variants if present
             if adapter.get('variants'):
                 adapter['variants'] = self._process_variants(adapter['variants'])
-            
             # Process selected variant
             if adapter.get('selected_variant'):
                 adapter['selected_variant'] = self._process_variant(adapter['selected_variant'])
-                
                 # Update main product price from selected variant
                 if 'offer' in adapter['selected_variant']:
                     offer = adapter['selected_variant']['offer']
                     adapter['price'] = offer.get('price')
                     adapter['raw_price'] = offer.get('raw_price')
-            
             # Clean stock info
             if adapter.get('stock_info'):
                 adapter['stock_info'] = [self._clean_stock_info(info) for info in adapter['stock_info']]
-            
             # Validate image URLs
             if adapter.get('images'):
                 adapter['images'] = self._validate_image_urls(adapter['images'])
-            
             # Clean specs
             if adapter.get('specs'):
                 adapter['specs'] = self._clean_specs(adapter['specs'])
-            
             # Ensure timestamp is in correct format
             if not adapter.get('timestamp'):
                 adapter['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -214,89 +206,71 @@ class ProductValidationPipeline:
         logger.info(f"Pipeline dropped {self.items_dropped} items")
 
 class DatabasePipeline:
-    """Pipeline for storing scraped data in the database"""
-    
+
+    """Pipeline for storing retailer product data"""
     def __init__(self):
         self.supabase = None
-        self.scraping_service = None
+        self.retailer_product_repo = None
+        self.price_point_repo = None
         self.retailer_cache = {}
 
-    async def process_item(self, item: ProductItem, spider: Spider) -> ProductItem:
-        """Process item and store in database"""
-        # Skip processing if item was dropped by previous pipeline
-        if isinstance(item, DropItem):
-            return item
-            
-        adapter = ItemAdapter(item)
-        
-        # Initialize connection on first use
-        if not self.scraping_service:
-            try:
-                self.supabase = await get_supabase_client()
-                self.scraping_service = ScrapingService(self.supabase)
-                logger.info("Successfully initialized Supabase client")
-            except Exception as e:
-                logger.error(f"Failed to initialize Supabase client: {str(e)}")
-                raise DropItem("Failed to initialize database connection")
+    async def process_item(self, item: ProductItem, spider) -> ProductItem:
+        """Process item and store in new schema"""
+        if not self.retailer_product_repo:
+            self.supabase = await get_supabase_client()
+            from scrapper.db.repositories.retailer_product import RetailerProductRepository
+            from scrapper.db.repositories.price_point import PricePointRepository
+            self.retailer_product_repo = RetailerProductRepository(self.supabase)
+            self.price_point_repo = PricePointRepository(self.supabase)
 
         try:
-            # Get retailer ID from cache or database
             retailer_id = await self._get_retailer_id(spider)
             if not retailer_id:
-                raise DropItem(f"No retailer found for spider {spider.name}")
+                return item
 
-            # Process the item using scraping service
-            response = await self.scraping_service.process_scraped_item(dict(adapter), retailer_id)
-            
-            # Handle Supabase response
-            if not response:
-                raise DropItem("Failed to store item in database - no data returned")
-            
-            scraped_data = response
-            if not scraped_data:
-                raise DropItem("Failed to store item in database - invalid data format")
-            
+            from scrapper.db.models.retailer_product import RetailerProduct
+            from scrapper.db.models.price_point import PricePoint
+            retailer_product = RetailerProduct.from_scraped_item(item, retailer_id)
+            saved_product = await self.retailer_product_repo.upsert(retailer_product)
+
+            # Store price point for history
+            if (item.get('price') or item.get('stock_info')) and saved_product.id and self.price_point_repo:
+                price_point = PricePoint.from_scraped_item(item, saved_product.id)
+                await self.price_point_repo.create(price_point)
+
             return item
 
         except Exception as e:
-            logger.error(f"Error storing item in database: {str(e)}")
-            return DropItem(f"Database error: {str(e)}")
+            logger.error(f"Error storing retailer product: {str(e)}")
+            return item
 
     async def _get_retailer_id(self, spider: Spider) -> Optional[int]:
         """Get retailer ID for spider, using cache to minimize database queries"""
         if spider.name in self.retailer_cache:
             return self.retailer_cache[spider.name]
 
-        # Map spider names to retailer names and types
+        # Map spider names to retailer IDs directly
         retailer_mapping = {
-            'datart': ('Datart', 'DIRECT_RETAILER'),
-            'euronics': ('Euronics', 'DIRECT_RETAILER'),
-            'mediamarkt': ('MediaMarkt', 'DIRECT_RETAILER'),
-            'pilulka': ('Pilulka', 'DIRECT_RETAILER'),
-            'planeo': ('Planeo', 'DIRECT_RETAILER'),
-            'telekom': ('Telekom', 'DIRECT_RETAILER'),
-            'zbozi': ('Zbozi', 'PRICE_COMPARER')
+            'datart': 1,
+            'euronics': 2,
+            'mediamarkt': 3,
+            'pilulka': 4,
+            'planeo': 5,
+            'telekom': 6,
+            'zbozi': 7,
+            'alza': 8,
+            'alza_api': 8
         }
 
         if spider.name not in retailer_mapping:
             return None
-
-        retailer_name, _ = retailer_mapping[spider.name]
         
-        try:
-            retailer = await self.scraping_service.retailer_repo.get_by_name(retailer_name)
-            if not retailer:
-                return None
-            
-            
-            self.retailer_cache[spider.name] = retailer.id
-            return retailer.id
-            
-        except Exception as e:
-            logger.error(f"Error fetching retailer ID for {retailer_name}: {str(e)}")
-            return None
+        retailer_id = retailer_mapping[spider.name]
+        self.retailer_cache[spider.name] = retailer_id
+        return retailer_id
 
     def close_spider(self, spider: Spider):
         """Clean up resources when spider closes"""
         self.supabase = None
-        self.scraping_service = None
+        self.retailer_product_repo = None
+        self.price_point_repo = None

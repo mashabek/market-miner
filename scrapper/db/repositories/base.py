@@ -1,5 +1,5 @@
 from typing import TypeVar, Generic, Optional, List, Type
-from supabase import Client
+from supabase import AsyncClient
 from scrapper.db.models import BaseModel
 
 T = TypeVar('T', bound=BaseModel)
@@ -7,7 +7,7 @@ T = TypeVar('T', bound=BaseModel)
 class BaseRepository(Generic[T]):
     """Base repository with CRUD operations"""
     
-    def __init__(self, supabase: Client, table_name: str, model_class: Type[T]):
+    def __init__(self, supabase: AsyncClient, table_name: str, model_class: Type[T]):
         self.supabase = supabase
         self.table_name = table_name
         self.model_class = model_class

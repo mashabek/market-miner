@@ -1,12 +1,12 @@
 from typing import Optional, List
-from supabase import Client
+from supabase import AsyncClient
 from scrapper.db.repositories import BaseRepository
 from scrapper.db.models import CategoryData
 
 class CategoryRepository(BaseRepository[CategoryData]):
     """Repository for category operations with ltree support"""
 
-    def __init__(self, supabase: Client):
+    def __init__(self, supabase: AsyncClient):
         super().__init__(supabase, "categories", CategoryData)
 
     async def get_by_path(self, path: str) -> Optional[CategoryData]:

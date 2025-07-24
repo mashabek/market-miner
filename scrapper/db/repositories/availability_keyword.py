@@ -1,12 +1,12 @@
 from typing import List, Optional
-from supabase import Client
+from supabase import AsyncClient
 from scrapper.db.models import AvailabilityKeyword
 from scrapper.db.repositories import BaseRepository
 
 class AvailabilityKeywordRepository(BaseRepository[AvailabilityKeyword]):
     """Repository for managing availability keywords."""
     
-    def __init__(self, supabase: Client):
+    def __init__(self, supabase: AsyncClient):
         super().__init__(supabase, "products", AvailabilityKeyword)
 
 

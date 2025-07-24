@@ -2,21 +2,27 @@
 
 import logging
 import json
+from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any, Generator
 from urllib.parse import urlparse
 import re
 
 import scrapy
-from scrapy.http import Request, Response
-from scrapy.exceptions import DropItem
-
+from scrapy.http.request import Request
+from scrapy.http.response import Response
 from scrapper.utils.sentry import add_breadcrumb, capture_error, monitor_errors
 from scrapper.items import ProductItem
 
 logger = logging.getLogger(__name__)
 
-class BaseSpider(scrapy.Spider):
+class BaseSpider(scrapy.Spider, ABC):
     """Base spider class with Sentry integration and common functionality."""
+    
+    @property
+    @abstractmethod
+    def allowed_domains(self) -> List[str]:
+        """List of allowed domains for this spider. Must be implemented by subclass."""
+        pass
     
     def __init__(self, urls=None, urls_file=None, *args, **kwargs):
         """
@@ -24,16 +30,24 @@ class BaseSpider(scrapy.Spider):
         
         Args:
             urls (str, optional): JSON array of URLs to scrape
-            urls_file (str, optional): Path to file containing URLs (one per line)
+            urls_file (str, optional): Path to file containing URLs (JSON array or one per line)
         """
         super().__init__(*args, **kwargs)
         # Handle URLs from file
         if urls_file:
             try:
-                with open(urls_file, 'r') as f:
-                    self.start_urls = [line.strip() for line in f if line.strip()]
-                logger.info(f"Using URLs from file: {urls_file}")
-                logger.info(f"Loaded {len(self.start_urls)} URLs from file")
+                with open(urls_file, 'r', encoding='utf-8') as f:
+                    try:
+                        # Try to load as JSON array
+                        self.start_urls = json.load(f)
+                        if not isinstance(self.start_urls, list):
+                            raise ValueError("JSON in urls_file must be a list of URLs")
+                        logger.info(f"Loaded {len(self.start_urls)} URLs from JSON file: {urls_file}")
+                    except json.JSONDecodeError:
+                        # Fallback: treat as plain text, one URL per line
+                        f.seek(0)
+                        self.start_urls = [line.strip() for line in f if line.strip()]
+                        logger.info(f"Loaded {len(self.start_urls)} URLs from text file: {urls_file}")
             except Exception as e:
                 logger.error(f"Error loading URLs from file {urls_file}: {e}")
                 raise
@@ -124,12 +138,12 @@ class BaseSpider(scrapy.Spider):
                 )
             except Exception as e:
                 capture_error(e, {"url": url})
-                yield self.create_failed_item(url)
+                logger.error(f"Failed to create request for URL {url}: {e}")
 
     def _get_headers(self) -> Dict[str, str]:
         """Get request headers. Override in subclass if needed."""
         return {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate, br',
